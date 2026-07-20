@@ -105,6 +105,72 @@ function FocusTracker() {
     setHistory(store.load());
   }, []);
 
+  const fileInputRef = useRef(null);
+  const [backupMsg, setBackupMsg] = useState("");
+
+  const exportData = () => {
+    try {
+      const blob = new Blob(
+        [JSON.stringify({ app: "lamplight", version: 1, history }, null, 2)],
+        { type: "application/json" }
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const d = new Date();
+      a.href = url;
+      a.download = `lamplight-backup-${d.getFullYear()}-${String(
+        d.getMonth() + 1
+      ).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setBackupMsg("Backup downloaded.");
+      setTimeout(() => setBackupMsg(""), 4000);
+    } catch {
+      setBackupMsg("Export failed.");
+      setTimeout(() => setBackupMsg(""), 4000);
+    }
+  };
+
+  const importData = (file) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        const incoming = Array.isArray(parsed) ? parsed : parsed.history;
+        if (!Array.isArray(incoming)) throw new Error("bad format");
+        const valid = incoming.filter(
+          (h) =>
+            h &&
+            typeof h.date === "number" &&
+            typeof h.efficiency === "number"
+        );
+        if (valid.length === 0) throw new Error("no sessions");
+        setHistory((prev) => {
+          const existing = new Set(prev.map((h) => h.date));
+          const merged = [
+            ...prev,
+            ...valid.filter((h) => !existing.has(h.date)),
+          ].sort((a, b) => b.date - a.date);
+          store.save(merged);
+          const added = merged.length - prev.length;
+          setBackupMsg(
+            added > 0
+              ? `Restored ${added} session${added === 1 ? "" : "s"}.`
+              : "No new sessions — everything was already here."
+          );
+          setTimeout(() => setBackupMsg(""), 4000);
+          return merged;
+        });
+      } catch {
+        setBackupMsg("Couldn't read that file — is it a Lamplight backup?");
+        setTimeout(() => setBackupMsg(""), 4000);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const saveRename = (date) => {
     setHistory((prev) => {
       const next = prev.map((x) =>
@@ -764,6 +830,62 @@ function FocusTracker() {
                   {confirmClear ? "Tap again to delete all" : "Clear history"}
                 </button>
               </div>
+            </div>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) importData(f);
+              e.target.value = "";
+            }}
+          />
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              justifyContent: "center",
+              marginTop: 10,
+            }}
+          >
+            {history.length > 0 && (
+              <button
+                onClick={exportData}
+                style={{
+                  ...S.ghostBtn,
+                  padding: "8px 20px",
+                  fontSize: 13,
+                  color: "#7d8494",
+                }}
+              >
+                ↓ Backup data
+              </button>
+            )}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                ...S.ghostBtn,
+                padding: "8px 20px",
+                fontSize: 13,
+                color: "#7d8494",
+              }}
+            >
+              ↑ Restore backup
+            </button>
+          </div>
+          {backupMsg && (
+            <div
+              style={{
+                textAlign: "center",
+                color: "#f2b23e",
+                fontSize: 13,
+                marginTop: 10,
+              }}
+            >
+              {backupMsg}
             </div>
           )}
         </div>
